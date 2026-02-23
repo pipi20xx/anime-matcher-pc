@@ -2,10 +2,8 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -27,9 +24,10 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install PyQt6 requests regex peewee pyinstaller
+          # 安装所有可能被核心算法动态引用的库
+          pip install PyQt6 requests regex peewee zhconv pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy
 
-      - name: Download Core Algorithm (Complete Build)
+      - name: Download Core Algorithm
         run: |
           curl -L https://github.com/pipi20xx/anime-matcher/archive/refs/heads/main.zip -o core.zip
           powershell Expand-Archive -Path core.zip -DestinationPath .
@@ -41,23 +39,18 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: |
+          # 使用 --hidden-import 强制包含所有动态依赖，确保导入链不中断
           pyinstaller --noconfirm --onedir --windowed `
             --add-data "src/utils/placeholders.json;src/utils" `
+            --hidden-import "regex" `
+            --hidden-import "zhconv" `
+            --hidden-import "fastapi" `
+            --hidden-import "pydantic" `
+            --hidden-import "uvicorn" `
+            --hidden-import "sqlmodel" `
+            --hidden-import "sqlalchemy" `
             --name "AnimeProRenamer" `
             main.py
-
-      - name: Generate Version Number
-        shell: bash
-        run: |
-          # 如果是手动推送的 Tag，则使用 Tag 名
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          else
-            # 否则使用 1.0.序号 (github.run_number 是递增的)
-            VERSION="v1.0.${{ github.run_number }}"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Release Version: $VERSION"
 
       - name: Package Release
         shell: bash
@@ -65,6 +58,14 @@ jobs:
           mkdir -p release_dist/AnimeProRenamer
           cp -r dist/AnimeProRenamer/* release_dist/AnimeProRenamer/
           cp -r anime-matcher-main release_dist/AnimeProRenamer/
+          
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="v1.0.${{ github.run_number }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
           cd release_dist
           powershell "Compress-Archive -Path AnimeProRenamer -DestinationPath ../AnimeProRenamer_Full_Win64.zip"
 
@@ -75,11 +76,15 @@ jobs:
           name: AnimeProRenamer ${{ env.VERSION }}
           files: AnimeProRenamer_Full_Win64.zip
           body: |
-            ## 自动构建版本: ${{ env.VERSION }}
+            ## 🚀 AnimeProRenamer ${{ env.VERSION }}
             
-            - 提交信息: ${{ github.event.head_commit.message }}
-            - 构建时间: ${{ github.event.head_commit.timestamp }}
-            - 此版本已内置 `anime-matcher` 最新核心算法。
+            ### 🛠️ 环境适配说明
+            - **内置核心**: `anime-matcher`
+            - **全量打包**: 已包含 `zhconv`, `regex`, `fastapi`, `sqlmodel` 等所有内核依赖
+            - **运行要求**: 无需安装 Python，解压即用
+            
+            ### 📝 更新日志
+            > ${{ github.event.head_commit.message }}
           draft: false
           prerelease: false
         env:
