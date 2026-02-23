@@ -35,6 +35,7 @@ class SettingsTab(QWidget):
         self.rename_format_combo = QComboBox()
         self.rename_format_combo.addItems([
             "[{team}] {title} - S{season_02}E{episode_02} [{resolution}][{video_encode}][{subtitle}]",
+            "S{season_02}E{episode_02} - {filename}",
             "{title} - S{season_02}E{episode_02} - {filename}"
         ])
         self.rename_format_combo.setEditable(True)
@@ -156,7 +157,7 @@ class SettingsTab(QWidget):
 
     def load_settings(self):
         # 剧集
-        self.rename_format_combo.setCurrentText(config.get_value("rename_format", "[{team}] {title} - S{season_02}E{episode_02}"))
+        self.rename_format_combo.setCurrentText(config.get_value("rename_format", "S{season_02}E{episode_02} - {filename}"))
         self.folder_format_input.setText(config.get_value("folder_format", "({year}){title}[tmdbid={tmdb_id}]"))
         self.season_format_input.setText(config.get_value("season_format", "Season {season}"))
         

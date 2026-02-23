@@ -1,122 +1,100 @@
 import os
+import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QGroupBox, QPlainTextEdit, QScrollArea, QLabel, 
                              QMessageBox, QFrame)
 from PyQt6.QtCore import Qt
-from src.utils.database import LocalRule, RemoteSubscription
+from src.utils.database import LocalRule, RemoteSubscription, SubscriptionCache, db
 from src.core.rules import RuleManager
 
 class RuleSection(QGroupBox):
-    """左右结构的规则配置组件"""
     def __init__(self, title, category, parent=None):
         super().__init__(title, parent)
-        self.category = category
+        self.category = category.strip().lower()
         
-        # 显式使用水平布局
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(10, 15, 10, 10)
         self.main_layout.setSpacing(10)
 
-        # --- 左侧：本地规则 (权重 2) ---
+        # 左侧：本地
         self.left_container = QWidget()
         self.left_layout = QVBoxLayout(self.left_container)
         self.left_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.label_l = QLabel("<b>本地规则</b> (每行一条):")
         self.local_edit = QPlainTextEdit()
-        self.local_edit.setPlaceholderText("例如: [Airota]\n关键词1")
-        self.local_edit.setMinimumHeight(120)
-        self.local_edit.setMinimumWidth(300) # 强制最小宽度防止被挤压
-        
-        self.left_layout.addWidget(self.label_l)
+        self.local_edit.setPlaceholderText("本地规则 (每行一条)...")
+        self.local_edit.setMinimumHeight(150)
+        self.left_layout.addWidget(QLabel("<b>本地规则</b>:"))
         self.left_layout.addWidget(self.local_edit)
         self.main_layout.addWidget(self.left_container, 2) 
 
-        # --- 右侧：远程订阅 (权重 1) ---
+        # 右侧：远程
         self.right_container = QWidget()
         self.right_layout = QVBoxLayout(self.right_container)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.label_r = QLabel("<b>远程订阅 URL</b> (每行一个):")
         self.remote_edit = QPlainTextEdit()
-        self.remote_edit.setPlaceholderText("https://example.com/rules.txt")
-        self.remote_edit.setMinimumHeight(120)
-        self.remote_edit.setMinimumWidth(200) # 强制最小宽度
-        
+        self.remote_edit.setPlaceholderText("订阅 URL (每行一个)...")
+        self.remote_edit.setMinimumHeight(150)
         self.sync_btn = QPushButton("同步该类订阅")
-        self.sync_btn.setFixedHeight(30)
         self.sync_btn.clicked.connect(self.sync_this_category)
-        
-        self.right_layout.addWidget(self.label_r)
+        self.right_layout.addWidget(QLabel("<b>远程订阅</b>:"))
         self.right_layout.addWidget(self.remote_edit)
         self.right_layout.addWidget(self.sync_btn)
         self.main_layout.addWidget(self.right_container, 1) 
 
-        # 确保左右布局按照比例分配
         self.main_layout.setStretch(0, 2)
         self.main_layout.setStretch(1, 1)
 
     def sync_this_category(self):
-        """保存当前数据并同步"""
         self.save_data()
         subs = RemoteSubscription.select().where(RemoteSubscription.category == self.category)
         if not subs.exists():
-            QMessageBox.warning(self, "提示", "请先在右侧填写订阅 URL 地址")
+            QMessageBox.warning(self, "提示", "请先填入订阅地址")
             return
-            
-        success_count = 0
-        error_msgs = []
+        success = 0
         for s in subs:
-            ok, msg = RuleManager.sync_subscription(s.id)
-            if ok:
-                success_count += 1
-            else:
-                error_msgs.append(f"源 [{s.url}] 同步失败: {msg}")
-        
-        if error_msgs:
-            error_text = "\n".join(error_msgs)
-            QMessageBox.critical(self, "同步失败", f"已成功同步 {success_count} 个源，但以下失败了:\n\n{error_text}")
-        else:
-            QMessageBox.information(self, "同步完成", f"分类 [{self.category}] 的 {success_count} 个订阅源已全部更新成功！")
-        
-        self.load_data() # 刷新 UI 状态
+            ok, _ = RuleManager.sync_subscription(s.id)
+            if ok: success += 1
+        QMessageBox.information(self, "同步完成", f"已成功同步 {success} 个源。")
+        self.load_data()
 
     def load_data(self):
-        """加载数据到 UI"""
-        rule = LocalRule.get_or_none(LocalRule.category == self.category)
-        if rule:
-            self.local_edit.setPlainText(rule.content)
+        rule = LocalRule.get_or_none(category=self.category)
+        if rule: self.local_edit.setPlainText(rule.content)
         
         subs = RemoteSubscription.select().where(RemoteSubscription.category == self.category)
-        urls = [s.url for s in subs]
-        self.remote_edit.setPlainText("\n".join(urls))
+        self.remote_edit.setPlainText("\n".join([s.url for s in subs]))
 
     def save_data(self):
-        """持久化存储"""
-        content = self.local_edit.toPlainText().strip()
-        rule, created = LocalRule.get_or_create(
-            category=self.category, 
-            defaults={'content': content}
-        )
-        if not created:
-            rule.content = content
-            rule.save()
+        """增量保存逻辑，防止缓存被误删"""
+        local_text = self.local_edit.toPlainText().strip()
+        new_urls = [line.strip() for line in self.remote_edit.toPlainText().splitlines() if line.strip()]
         
-        # 处理远程 URL
-        RemoteSubscription.delete().where(RemoteSubscription.category == self.category).execute()
-        urls = [line.strip() for line in self.remote_edit.toPlainText().splitlines() if line.strip()]
-        for url in urls:
-            RemoteSubscription.create(
-                name=f"{self.category}_sub", 
-                url=url, 
-                category=self.category
-            )
+        with db.atomic():
+            # 1. 本地规则
+            rule, _ = LocalRule.get_or_create(category=self.category)
+            rule.content = local_text
+            rule.updated_at = datetime.datetime.now()
+            rule.save()
+            
+            # 2. 远程订阅：增量处理
+            existing_subs = {s.url: s for s in RemoteSubscription.select().where(RemoteSubscription.category == self.category)}
+            
+            # 删除不再需要的
+            for url, sub_obj in existing_subs.items():
+                if url not in new_urls:
+                    sub_obj.delete_instance(recursive=True)
+            
+            # 添加新增的
+            for url in new_urls:
+                if url not in existing_subs:
+                    RemoteSubscription.create(name=f"{self.category}_sub", url=url, category=self.category)
+        
+        print(f"[DEBUG] 分类 {self.category} 已保存。")
 
 class RuleManagerWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.main_layout = QVBoxLayout(self)
-        
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -124,10 +102,10 @@ class RuleManagerWidget(QWidget):
         self.scroll_layout = QVBoxLayout(content_widget)
 
         self.sections = [
-            RuleSection("1. 自定义识别词 · 本地与远程 (Noise Filter)", "noise"),
-            RuleSection("2. 自定义制作组 · 本地与远程 (Groups Filter)", "group"),
-            RuleSection("3. 自定义特权规则 · 本地与远程 (Privileged Rules)", "privileged"),
-            RuleSection("4. 自定义渲染规则 · 本地与远程 (Render Rules)", "render")
+            RuleSection("1. 自定义识别词 (Noise)", "noise"),
+            RuleSection("2. 自定义制作组 (Group)", "group"),
+            RuleSection("3. 自定义特权规则 (Privileged)", "privileged"),
+            RuleSection("4. 自定义渲染规则 (Render)", "render")
         ]
 
         for sec in self.sections:
@@ -137,8 +115,8 @@ class RuleManagerWidget(QWidget):
         scroll.setWidget(content_widget)
         self.main_layout.addWidget(scroll)
 
-        self.save_all_btn = QPushButton("保存所有设置并使之生效")
-        self.save_all_btn.setFixedHeight(45)
+        self.save_all_btn = QPushButton("保存所有规则配置")
+        self.save_all_btn.setFixedHeight(50)
         self.save_all_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.save_all_btn.clicked.connect(self.save_all_action)
         self.main_layout.addWidget(self.save_all_btn)
@@ -146,4 +124,4 @@ class RuleManagerWidget(QWidget):
     def save_all_action(self):
         for sec in self.sections:
             sec.save_data()
-        QMessageBox.information(self, "成功", "所有本地规则和订阅地址已保存至 SQLite。")
+        QMessageBox.information(self, "成功", "设置已保存。如果添加了新订阅，请点击各分类下的“同步”按钮。")

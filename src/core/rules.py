@@ -7,17 +7,13 @@ class RuleManager:
     """管理规则的同步与合并逻辑"""
     @staticmethod
     def sync_subscription(sub_id):
-        """同步指定的远程订阅源"""
         try:
             sub = RemoteSubscription.get_by_id(sub_id)
             headers = {'User-Agent': 'Mozilla/5.0 (AnimeMatcher-PC)'}
-            
-            # 先下载内容
             response = requests.get(sub.url, headers=headers, timeout=15)
             response.raise_for_status()
             content = response.text
             
-            # 使用内容更新或创建缓存 (修复 NOT NULL 报错)
             cache, created = SubscriptionCache.get_or_create(
                 subscription=sub,
                 defaults={'content': content}
@@ -31,26 +27,29 @@ class RuleManager:
             sub.save()
             return True, "同步成功"
         except Exception as e:
-            err_msg = str(e)
-            return False, err_msg
+            return False, str(e)
 
     @staticmethod
     def get_merged_rules(category: str):
-        """根据分类加载合并后的规则列表"""
+        """
+        根据分类加载合并后的规则列表。
+        使用更稳健的 Peewee 查询语法。
+        """
         rules = []
         
-        # 1. 加载本地规则
-        local_rule = LocalRule.get_or_none(LocalRule.category == category, LocalRule.enabled == True)
-        if local_rule:
+        # 1. 加载本地规则 (使用关键字参数查询)
+        local_rule = LocalRule.get_or_none(category=category, enabled=True)
+        if local_rule and local_rule.content:
             lines = [line.strip() for line in local_rule.content.splitlines() if line.strip()]
             rules.extend(lines)
             
         # 2. 加载该分类下所有远程缓存内容
         subs = RemoteSubscription.select().where(RemoteSubscription.category == category, RemoteSubscription.enabled == True)
         for sub in subs:
-            cache = SubscriptionCache.get_or_none(SubscriptionCache.subscription == sub)
-            if cache:
+            cache = SubscriptionCache.get_or_none(subscription=sub)
+            if cache and cache.content:
                 lines = [line.strip() for line in cache.content.splitlines() if line.strip()]
                 rules.extend(lines)
         
+        # 去重
         return sorted(list(set(rules)))
