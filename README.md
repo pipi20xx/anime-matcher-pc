@@ -1,72 +1,86 @@
-# Anime-Matcher PC (剧集视频重命名工具)
+# Anime-Matcher PC (专业级剧集整理工具)
 
-基于 [anime-matcher](https://github.com/pipi20xx/anime-matcher) 核心算法的桌面端重命名工具，采用 PyQt6 构建。本项目采用 **UI 与 逻辑完全解耦** 的模块化设计，旨在提供高效、智能、且易于维护的剧集文件整理体验。
+基于 [anime-matcher](https://github.com/pipi20xx/anime-matcher) 核心算法的桌面端重命名与整理工具。本项目采用解耦的组件化架构，集成本地 AI 识别、云端元数据对撞及高度自定义的规则引擎。
 
-## 🌟 特色功能
+## ✨ 核心特性
 
-- **智能识别**：深度集成 `anime-matcher` 高级识别内核，精准提取剧集标题、季度、集数、制作组及技术规格。
-- **架构解耦**：前端 UI 与后端识别引擎、重命名逻辑完全分离，支持算法核心的一键更新。
-- **动态部署**：支持从 GitHub 自动下载/更新核心算法库，也支持手动拖入部署。
-- **高度自定义**：
-    - 支持自定义文件名、主文件夹、季文件夹的命名格式（使用 `{title}`, `{season}`, `{episode}` 等占位符）。
-    - 内置强大的正则替换规则，可批量清洗文件名中的个性化噪声。
-- **安全保障**：
-    - **预览模式**：在执行物理重命名前，可实时预览所有文件的路径变更。
-    - **自定义覆盖**：支持手动指定 TMDB ID、季度偏移或媒体类型（电影/剧集）。
-- **跨平台支持**：支持 Windows、Linux 及 macOS（需安装 Python 环境）。
+- **模块化架构**：UI 容器与业务页签 (Main/Settings/Rules) 完全解耦，代码清晰易维护。
+- **全自动识别 (L1 + L2)**：
+    - **内核识别 (L1)**：精准提取文件名中的标题、集数、制作组等原始元数据。
+    - **云端对撞 (L2)**：联动 **TMDB** 与 **Bangumi**，自动补全官方标题、上映年份、评分及制片国家。
+- **规则管理中心**：
+    - **多维度过滤**：独立配置屏蔽词 (Noise)、制作组 (Groups)、特权规则 (Privileged) 及渲染规则 (Render)。
+    - **远程同步**：支持从 GitHub 等地址一键同步并本地缓存远程规则。
+    - **高性能存储**：采用 **SQLite (Peewee ORM)** 存储规则与指纹记忆，加载速度极快。
+- **智能重命名引擎**：
+    - **全字段支持**：基于 JSON 配置的 22 个元数据字段（如 `{team}`, `{resolution}`, `{season_02}`, `{video_encode}` 等）。
+    - **路径自动记忆**：自动创建主文件夹与季文件夹，支持自定义偏移与媒体类型覆盖。
+- **用户体验优化**：
+    - **深度拖拽支持**：自动解码 URL 编码，支持直接拖入文件或整个文件夹。
+    - **状态记忆**：自动记忆窗口尺寸、位置及界面分割条比例。
+    - **EXE 友好**：内置统一路径管理器，支持 PyInstaller 一键打包。
 
-## 🏗️ 项目架构
-
-项目采用层次化结构，确保代码清晰且易于扩展：
+## 🏗️ 目录结构
 
 ```text
-/vol1/1000/NVME/anime-matcher-pc/
-├── main.py                 # 程序启动入口点
-├── .gitignore              # Git 忽略配置
-├── VideoRenamer_Qt6.ini    # 自动生成的本地配置文件
-├── src/
-│   ├── gui/                # 界面层：负责 UI 渲染与异步线程调度 (QThread)
-│   ├── core/               # 业务层：负责算法适配与重命名逻辑计算
-│   └── utils/              # 工具层：配置管理、网络下载器、文件操作辅助
-└── anime-matcher-main/     # [核心算法库]：外部导入或自动下载的识别内核
+/
+├── main.py                 # 程序启动入口
+├── VideoRenamer_Qt6.ini    # 用户配置 (自动生成)
+├── VideoRenamer.db         # 本地规则数据库 (自动生成)
+├── data/                   # 核心算法生成的缓存目录 (自动生成)
+│   └── matcher_storage.db  # 核心元数据缓存与指纹记忆
+├── anime-matcher-main/     # 核心算法库 (外部导入/自动下载)
+└── src/
+    ├── gui/                # UI 层
+    │   ├── tabs/           # 解耦的页签组件 (MainTab, SettingsTab)
+    │   ├── rule_manager.py # 规则管理组件
+    │   └── worker.py       # 异步处理线程 (QThread)
+    ├── core/               # 业务逻辑层
+    │   ├── processor.py    # 算法适配器 (L1/L2 联动逻辑)
+    │   ├── renamer.py      # 重命名执行引擎
+    │   └── rules.py        # 规则合并与同步逻辑
+    └── utils/              # 工具层
+        ├── paths.py        # 统一路径管理器 (适配开发与打包环境)
+        ├── config.py       # QSettings 配置管理
+        ├── database.py     # SQLite/Peewee ORM 模型
+        └── placeholders.json # 占位符定义字典
 ```
 
-## 🚀 快速开始
+## 🚀 快速上手
 
-### 1. 安装环境
-
-确保你已安装 Python 3.10 或更高版本。
-
-安装必要的 Python 依赖库：
+### 1. 环境准备
+确保安装 Python 3.10+，并执行依赖安装：
 ```bash
-pip install PyQt6 requests regex
+pip install PyQt6 requests regex peewee
 ```
 
-### 2. 获取核心算法
+### 2. 初始化核心
+启动程序后，前往 **“设置与算法”** 页签：
+- 点击 **“自动下载/更新 (GitHub)”** 部署识别内核。
+- 填入你的 **TMDB API Key** 并配置网络代理（如在国内环境运行）。
 
-本程序依赖 `anime-matcher` 核心库。你可以通过以下两种方式获取：
-- **自动获取**：启动程序后，进入 **“设置”** 页签，点击 **“自动下载/更新 (GitHub)”**。
-- **手动获取**：从 [GitHub 仓库](https://github.com/pipi20xx/anime-matcher) 下载 ZIP 包，解压并重命名文件夹为 `anime-matcher-main` 放置在项目根目录。
+### 3. 配置规则
+前往 **“识别规则管理”**：
+- 在左侧输入本地自定义的过滤词。
+- 在右侧填入远程订阅 URL 并点击同步。
 
-### 3. 运行程序
+### 4. 开始整理
+回到 **“主界面”**，拖入视频文件，点击 **“预览重命名”**，确认无误后点击 **“执行重命名”**。
 
-在项目根目录下执行：
+## 📦 打包 EXE
+本项目已完成打包适配，使用 PyInstaller 即可生成单文件或文件夹版本：
 ```bash
-python main.py
+pyinstaller --noconfirm --onedir --windowed ^
+  --add-data "src/utils/placeholders.json;src/utils" ^
+  --name "AnimeProRenamer" ^
+  main.py
 ```
 
-## ⚙️ 配置说明
-
-- **文件名格式示例**：`{title} - S{season}E{episode} - {filename}`
-- **主文件夹格式示例**：`({year}){title}[tmdbid={tmdbid}]`
-- **季文件夹格式示例**：`Season {season_int}`
-
-所有配置均会持久化保存于 `VideoRenamer_Qt6.ini` 中。
-
-## 🛡️ 开关说明
-
-- **预览模式**：仅计算路径并显示在表格中，不修改任何文件。
-- **执行模式**：会根据计算出的路径执行 `os.rename` 操作，并自动创建必要的文件夹。
+## 📜 占位符参考
+程序内置了详尽的占位符帮助文档，可在设置页面点击 **“💡 占位符说明”** 查看并复制代码。常见占位符包括：
+- `{title}`: 最终标题 | `{year}`: 上映年份
+- `{season_02}`: 补零季度 | `{episode_02}`: 补零集数
+- `{team}`: 制作组 | `{resolution}`: 分辨率 | `{video_encode}`: 编码
 
 ---
-*本项目核心算法部分归原作者所有，GUI 部分由 Gemini CLI 协作构建。*
+*本项目由 Gemini CLI 协助进行模块化重构与功能增强。*
