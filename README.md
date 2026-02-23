@@ -8,17 +8,41 @@
 - **全自动识别 (L1 + L2)**：
     - **内核识别 (L1)**：精准提取文件名中的标题、集数、制作组等原始元数据。
     - **云端对撞 (L2)**：联动 **TMDB** 与 **Bangumi**，自动补全官方标题、上映年份、评分及制片国家。
-- **规则管理中心**：
-    - **多维度过滤**：独立配置屏蔽词 (Noise)、制作组 (Groups)、特权规则 (Privileged) 及渲染规则 (Render)。
-    - **远程同步**：支持从 GitHub 等地址一键同步并本地缓存远程规则。
-    - **高性能存储**：采用 **SQLite (Peewee ORM)** 存储规则与指纹记忆，加载速度极快。
-- **智能重命名引擎**：
-    - **全字段支持**：基于 JSON 配置的 22 个元数据字段（如 `{team}`, `{resolution}`, `{season_02}`, `{video_encode}` 等）。
-    - **路径自动记忆**：自动创建主文件夹与季文件夹，支持自定义偏移与媒体类型覆盖。
-- **用户体验优化**：
-    - **深度拖拽支持**：自动解码 URL 编码，支持直接拖入文件或整个文件夹。
-    - **状态记忆**：自动记忆窗口尺寸、位置及界面分割条比例。
-    - **EXE 友好**：内置统一路径管理器，支持 PyInstaller 一键打包。
+- **规则管理中心**：支持本地规则与远程订阅 (GitHub) 同步，通过 SQLite 缓存确保极速加载。
+- **智能重命名引擎**：支持补零逻辑 (`season_02`)、路径自动创建及 22 个细分元数据字段。
+- **用户体验优化**：深度拖拽支持、URL 自动解码、窗口尺寸与布局状态记忆。
+
+## 🧩 重命名占位符指南
+
+重命名格式（文件名、主文件夹、季文件夹）支持以下所有字段，使用时请用花括号包裹，如 `{title}`：
+
+### 🧠 最终决策结果
+| 占位符 | 说明 | 示例 |
+| :--- | :--- | :--- |
+| `{title}` | 最终采信标题 (优先使用云端/专家规则修正) | 无职转生 |
+| `{year}` | 上映年份 | 2021 |
+| `{category}` | 媒体分类 | 剧集 / 电影 |
+| `{season}` | 最终决定的季度数字 | 1 |
+| `{season_02}` | 季度数字补零 | 01 |
+| `{episode}` | 最终决定的集数或范围 | 13 或 01-12 |
+| `{episode_02}` | 集数数字补零 | 05 |
+| `{team}` | 最终确定的制作小组 | Airota |
+| `{resolution}` | 最终识别的分辨率 | 1080p |
+| `{video_encode}` | 最终视频编码 | x265 |
+| `{video_effect}` | 视频特效 | HDR / Dolby Vision |
+| `{audio_encode}` | 最终音频编码 | FLAC / AAC |
+| `{subtitle}` | 最终字幕语言 | CHS / CHT |
+| `{source}` | 最终资源来源 | WEB-DL / BluRay |
+| `{platform}` | 最终发布平台 | B-Global / Netflix |
+| `{origin_country}` | 制片国家 | 日本 / 中国 |
+| `{release_date}` | 正式上映/发布日期 | 2021-01-10 |
+| `{tmdb_id}` | TMDB 唯一识别码 | 123456 |
+| `{secondary_category}` | 二级分类全路径 | 日漫/热血 |
+| `{main_category}` | 主二级分类 (仅取第一项) | 日漫 |
+| `{filename}` | **清洗后**的原名 (不含后缀) | [Airota] Mushoku No.11 |
+| `{original_filename}`| **原始**完整文件名 (含后缀) | [Airota] Mushoku No.11.mkv |
+| `{processed_name}` | **渲染后**原名 (由专家规则重命名后) | 无职转生 第11话 |
+| `{path}` | 文件所在的原始完整路径 | D:\Anime\... |
 
 ## 🏗️ 目录结构
 
@@ -27,60 +51,29 @@
 ├── main.py                 # 程序启动入口
 ├── VideoRenamer_Qt6.ini    # 用户配置 (自动生成)
 ├── VideoRenamer.db         # 本地规则数据库 (自动生成)
-├── data/                   # 核心算法生成的缓存目录 (自动生成)
+├── data/                   # 核心算法生成的缓存目录
 │   └── matcher_storage.db  # 核心元数据缓存与指纹记忆
 ├── anime-matcher-main/     # 核心算法库 (外部导入/自动下载)
 └── src/
-    ├── gui/                # UI 层
-    │   ├── tabs/           # 解耦的页签组件 (MainTab, SettingsTab)
-    │   ├── rule_manager.py # 规则管理组件
-    │   └── worker.py       # 异步处理线程 (QThread)
-    ├── core/               # 业务逻辑层
-    │   ├── processor.py    # 算法适配器 (L1/L2 联动逻辑)
-    │   ├── renamer.py      # 重命名执行引擎
-    │   └── rules.py        # 规则合并与同步逻辑
-    └── utils/              # 工具层
-        ├── paths.py        # 统一路径管理器 (适配开发与打包环境)
-        ├── config.py       # QSettings 配置管理
-        ├── database.py     # SQLite/Peewee ORM 模型
-        └── placeholders.json # 占位符定义字典
+    ├── gui/                # UI 层 (MainTab, SettingsTab, RuleManager)
+    ├── core/               # 业务逻辑层 (Processor, Renamer, Rules)
+    └── utils/              # 工具层 (Paths, Config, Placeholders)
 ```
 
 ## 🚀 快速上手
 
-### 1. 环境准备
-确保安装 Python 3.10+，并执行依赖安装：
-```bash
-pip install PyQt6 requests regex peewee
-```
-
-### 2. 初始化核心
-启动程序后，前往 **“设置与算法”** 页签：
-- 点击 **“自动下载/更新 (GitHub)”** 部署识别内核。
-- 填入你的 **TMDB API Key** 并配置网络代理（如在国内环境运行）。
-
-### 3. 配置规则
-前往 **“识别规则管理”**：
-- 在左侧输入本地自定义的过滤词。
-- 在右侧填入远程订阅 URL 并点击同步。
-
-### 4. 开始整理
-回到 **“主界面”**，拖入视频文件，点击 **“预览重命名”**，确认无误后点击 **“执行重命名”**。
+1. **安装环境**：Python 3.10+，执行 `pip install PyQt6 requests regex peewee`。
+2. **下载内核**：启动程序 -> 设置与算法 -> 点击 **“自动下载/更新”**。
+3. **配置联网**：在设置中填入 **TMDB API Key** (v3) 并设置代理。
+4. **开始整理**：拖入文件 -> 预览重命名 -> 执行重命名。
 
 ## 📦 打包 EXE
-本项目已完成打包适配，使用 PyInstaller 即可生成单文件或文件夹版本：
 ```bash
 pyinstaller --noconfirm --onedir --windowed ^
   --add-data "src/utils/placeholders.json;src/utils" ^
   --name "AnimeProRenamer" ^
   main.py
 ```
-
-## 📜 占位符参考
-程序内置了详尽的占位符帮助文档，可在设置页面点击 **“💡 占位符说明”** 查看并复制代码。常见占位符包括：
-- `{title}`: 最终标题 | `{year}`: 上映年份
-- `{season_02}`: 补零季度 | `{episode_02}`: 补零集数
-- `{team}`: 制作组 | `{resolution}`: 分辨率 | `{video_encode}`: 编码
 
 ---
 *本项目由 Gemini CLI 协助进行模块化重构与功能增强。*
