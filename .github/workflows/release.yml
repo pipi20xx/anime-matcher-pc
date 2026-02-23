@@ -24,8 +24,8 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          # 安装所有可能被核心算法动态引用的库
-          pip install PyQt6 requests regex peewee zhconv pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy
+          # 安装所有已知的核心算法依赖
+          pip install PyQt6 requests regex peewee zhconv cn2an pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy
 
       - name: Download Core Algorithm
         run: |
@@ -39,11 +39,12 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: |
-          # 使用 --hidden-import 强制包含所有动态依赖，确保导入链不中断
+          # 显式包含所有动态加载可能用到的库
           pyinstaller --noconfirm --onedir --windowed `
             --add-data "src/utils/placeholders.json;src/utils" `
             --hidden-import "regex" `
             --hidden-import "zhconv" `
+            --hidden-import "cn2an" `
             --hidden-import "fastapi" `
             --hidden-import "pydantic" `
             --hidden-import "uvicorn" `
@@ -77,14 +78,9 @@ jobs:
           files: AnimeProRenamer_Full_Win64.zip
           body: |
             ## 🚀 AnimeProRenamer ${{ env.VERSION }}
-            
-            ### 🛠️ 环境适配说明
-            - **内置核心**: `anime-matcher`
-            - **全量打包**: 已包含 `zhconv`, `regex`, `fastapi`, `sqlmodel` 等所有内核依赖
-            - **运行要求**: 无需安装 Python，解压即用
-            
-            ### 📝 更新日志
-            > ${{ github.event.head_commit.message }}
+            - 内置核心: `anime-matcher`
+            - 环境适配: 已补全 `cn2an`, `zhconv`, `regex`, `sqlmodel` 等依赖
+            - 构建时间: ${{ github.event.head_commit.timestamp }}
           draft: false
           prerelease: false
         env:
