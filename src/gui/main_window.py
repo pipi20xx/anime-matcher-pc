@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
 from PyQt6.QtCore import Qt, QUrl
 from src.utils.config import config
 from src.gui.worker import RenameWorker
+from src.gui.rule_manager import RuleManagerWidget
 
 VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.ts', '.flv', '.webm', '.mpg', '.mpeg']
 
@@ -32,6 +33,11 @@ class VideoRenamerGUI(QMainWindow):
         self.main_tab = QWidget()
         self.tab_widget.addTab(self.main_tab, "主界面")
         self.init_main_tab()
+        
+        # 规则管理 Tab
+        self.rule_tab = RuleManagerWidget()
+        self.tab_widget.addTab(self.rule_tab, "识别规则管理")
+
         self.settings_tab = QWidget()
         self.tab_widget.addTab(self.settings_tab, "设置")
         self.init_settings_tab()

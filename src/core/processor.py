@@ -12,10 +12,13 @@ if CORE_PATH not in sys.path:
 try:
     from anime_matcher.kernel import core_recognize
     from anime_matcher.data_models import MediaType
+    from anime_matcher.special_episode_handler import SpecialEpisodeHandler
     ALGO_AVAILABLE = True
 except ImportError:
     print(f"Error: Could not import anime_matcher core from {CORE_PATH}")
     ALGO_AVAILABLE = False
+
+from src.core.rules import RuleManager
 
 class RecognitionResult:
     """标准化的识别结果，用于 UI 渲染"""
@@ -42,11 +45,25 @@ class RecognitionProcessor:
             return RecognitionResult("算法未就绪", "0000", "1", "1", "N/A", "N/A", "tv", logs)
         
         try:
-            # 调用内核识别逻辑
+            # 1. 动态从 SQLite 加载本地规则 (噪音、制作组、特权)
+            db_noise = RuleManager.get_merged_rules('noise')
+            db_groups = RuleManager.get_merged_rules('group')
+            db_privileged = RuleManager.get_merged_rules('privileged')
+            
+            # 2. 注入特权提取规则 (对标 Docker STAGE 0.5)
+            if db_privileged:
+                SpecialEpisodeHandler.load_external_rules(db_privileged)
+                logs.append(f"┃ [CONFIG] 注入特权规则: {len(db_privileged)} 条")
+
+            # 3. 合并参数 (对标 Docker STAGE 1)
+            final_words = list(set(self.custom_words + db_noise))
+            final_groups = list(set(self.custom_groups + db_groups))
+
+            # 4. 调用内核识别逻辑
             meta = core_recognize(
                 input_name=filename,
-                custom_words=self.custom_words,
-                custom_groups=self.custom_groups,
+                custom_words=final_words,
+                custom_groups=final_groups,
                 original_input=filename,
                 current_logs=logs,
                 batch_enhancement=False,
