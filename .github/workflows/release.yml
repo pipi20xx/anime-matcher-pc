@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*' # 当你推送以 v 开头的标签时触发，如 v1.0.0
+  workflow_dispatch: # 允许手动从 Actions 页面触发构建
 
 permissions:
   contents: write
