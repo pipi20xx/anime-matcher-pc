@@ -54,7 +54,7 @@ class RuleSection(QGroupBox):
         for s in subs:
             ok, _ = RuleManager.sync_subscription(s.id)
             if ok: success += 1
-        QMessageBox.information(self, "同步完成", f"已成功同步 {success} 个源。")
+        QMessageBox.information(self, "同步完成", f"分类 [{self.category}] 已成功同步 {success} 个源。")
         self.load_data()
 
     def load_data(self):
@@ -65,31 +65,22 @@ class RuleSection(QGroupBox):
         self.remote_edit.setPlainText("\n".join([s.url for s in subs]))
 
     def save_data(self):
-        """增量保存逻辑，防止缓存被误删"""
         local_text = self.local_edit.toPlainText().strip()
         new_urls = [line.strip() for line in self.remote_edit.toPlainText().splitlines() if line.strip()]
         
         with db.atomic():
-            # 1. 本地规则
             rule, _ = LocalRule.get_or_create(category=self.category)
             rule.content = local_text
             rule.updated_at = datetime.datetime.now()
             rule.save()
             
-            # 2. 远程订阅：增量处理
             existing_subs = {s.url: s for s in RemoteSubscription.select().where(RemoteSubscription.category == self.category)}
-            
-            # 删除不再需要的
             for url, sub_obj in existing_subs.items():
                 if url not in new_urls:
                     sub_obj.delete_instance(recursive=True)
-            
-            # 添加新增的
             for url in new_urls:
                 if url not in existing_subs:
                     RemoteSubscription.create(name=f"{self.category}_sub", url=url, category=self.category)
-        
-        print(f"[DEBUG] 分类 {self.category} 已保存。")
 
 class RuleManagerWidget(QWidget):
     def __init__(self):
@@ -115,13 +106,47 @@ class RuleManagerWidget(QWidget):
         scroll.setWidget(content_widget)
         self.main_layout.addWidget(scroll)
 
-        self.save_all_btn = QPushButton("保存所有规则配置")
-        self.save_all_btn.setFixedHeight(50)
-        self.save_all_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        # 全局操作按钮布局
+        global_btn_layout = QHBoxLayout()
+        
+        self.save_all_btn = QPushButton("仅保存本地配置")
+        self.save_all_btn.setFixedHeight(45)
         self.save_all_btn.clicked.connect(self.save_all_action)
-        self.main_layout.addWidget(self.save_all_btn)
+        
+        self.sync_all_btn = QPushButton("🚀 保存并同步所有远程订阅")
+        self.sync_all_btn.setFixedHeight(45)
+        self.sync_all_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; font-size: 14px;")
+        self.sync_all_btn.clicked.connect(self.save_and_sync_all_action)
+        
+        global_btn_layout.addWidget(self.save_all_btn)
+        global_btn_layout.addWidget(self.sync_all_btn)
+        self.main_layout.addLayout(global_btn_layout)
 
     def save_all_action(self):
         for sec in self.sections:
             sec.save_data()
-        QMessageBox.information(self, "成功", "设置已保存。如果添加了新订阅，请点击各分类下的“同步”按钮。")
+        QMessageBox.information(self, "成功", "所有本地规则和 URL 列表已存入数据库。")
+
+    def save_and_sync_all_action(self):
+        """一键保存并触发所有分类的同步"""
+        for sec in self.sections:
+            sec.save_data()
+        
+        subs = RemoteSubscription.select()
+        if not subs.exists():
+            QMessageBox.information(self, "提示", "已保存本地配置，但未发现需要同步的远程订阅 URL。")
+            return
+
+        total_count = len(subs)
+        success_count = 0
+        
+        # 简单循环同步
+        for s in subs:
+            ok, _ = RuleManager.sync_subscription(s.id)
+            if ok: success_count += 1
+            
+        for sec in self.sections:
+            sec.load_data() # 刷新 UI 状态
+            
+        QMessageBox.information(self, "全部同步完成", 
+                                f"所有配置已保存。\n远程订阅同步结果：成功 {success_count} / 总计 {total_count}")
