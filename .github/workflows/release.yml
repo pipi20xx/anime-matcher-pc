@@ -24,7 +24,6 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          # 安装核心算法及其资源管理依赖
           pip install PyQt6 requests regex peewee zhconv cn2an pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy httpx hishel setuptools
 
       - name: Download Core Algorithm
@@ -39,7 +38,6 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: |
-          # --collect-all 会强制包含包内所有元数据、二进制和数据文件(如 zhcdict.json)
           pyinstaller --noconfirm --onedir --windowed `
             --collect-all "zhconv" `
             --collect-all "cn2an" `
@@ -79,9 +77,24 @@ jobs:
           files: AnimeProRenamer_Full_Win64.zip
           body: |
             ## 🚀 AnimeProRenamer ${{ env.VERSION }}
-            - **资源修复**: 已强制打包 `zhconv` 与 `cn2an` 的字典文件
-            - **内核版本**: 同步最新版 `anime-matcher`
-            - **环境依赖**: 已内建所有库，解压即用
+
+            这是由 GitHub Actions 自动编译生成的全量发行版本。
+
+            ### ✨ 版本特性
+            - **全量集成**: 已内置最新的 `anime-matcher` 识别内核，无需额外下载。
+            - **环境自持**: 已打入 `zhconv`, `cn2an`, `regex`, `httpx` 等所有核心依赖，解压即用。
+            - **功能对齐**: 支持最新的 L1/L2 联动识别、规则管理及双轨制（电影/剧集）重命名。
+
+            ### 📝 变更摘要
+            > ${{ github.event.head_commit.message }}
+
+            ### 🛠️ 构建详情
+            - **构建时间**: `${{ github.event.head_commit.timestamp }}`
+            - **流水线 ID**: `${{ github.run_number }}`
+            - **目标平台**: Windows x64 (10/11 Server)
+
+            ---
+            *本项目核心算法由 pipi20xx 开发，GUI 与 CI/CD 流程由 Gemini CLI 协作构建。*
           draft: false
           prerelease: false
         env:
