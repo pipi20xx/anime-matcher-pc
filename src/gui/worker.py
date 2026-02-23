@@ -30,10 +30,7 @@ class RenameWorker(QThread):
             return
 
         # 1. 初始化处理器和重命名引擎
-        processor = RecognitionProcessor(
-            custom_words=self.config_data.get('custom_words', []),
-            custom_groups=self.config_data.get('custom_groups', [])
-        )
+        processor = RecognitionProcessor(self.config_data)
         renamer = RenameEngine(
             rename_format=self.config_data.get('rename_format'),
             folder_format=self.config_data.get('folder_format'),

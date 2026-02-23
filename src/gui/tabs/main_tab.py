@@ -161,8 +161,10 @@ class MainTab(QWidget):
             QMessageBox.warning(self, "警告", "请先添加文件！")
             return
 
-        # 核心：跨组件获取设置数据 (通过 parent_window)
+        # 获取 SettingsTab 的最新全量配置 (包含联网参数)
         config_data = self.parent_window.settings_tab.get_config_data()
+        
+        # 注入 MainTab 特有的覆盖参数
         config_data['custom_settings'] = {
             'custom_season_enabled': self.custom_season_checkbox.isChecked(),
             'custom_season_value': self.custom_season_input.text(),

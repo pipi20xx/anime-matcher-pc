@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import traceback
+import asyncio
 
 # 动态加载核心识别库
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,75 +14,74 @@ try:
     from anime_matcher.kernel import core_recognize
     from anime_matcher.data_models import MediaType
     from anime_matcher.special_episode_handler import SpecialEpisodeHandler
+    from anime_matcher.providers.tmdb.client import TMDBProvider
+    from anime_matcher.providers.bangumi.client import BangumiProvider
+    # 注意：核心库内部可能有 storage 对象管理本地缓存
+    from anime_matcher.storage_manager import storage 
     ALGO_AVAILABLE = True
 except ImportError:
-    print(f"Error: Could not import anime_matcher core from {CORE_PATH}")
+    print(f"Error: Could not import anime_matcher components from {CORE_PATH}")
     ALGO_AVAILABLE = False
 
 from src.core.rules import RuleManager
 
 class RecognitionResult:
-    """标准化的识别结果，与主项目 final_result 字段完全对齐"""
     def __init__(self, data: dict, logs: list):
         self.logs = logs
         self._data = data
-        # 将字典转为对象属性
-        for k, v in data.items():
-            setattr(self, k, v)
-
-    def to_dict(self):
-        return self._data
+        for k, v in data.items(): setattr(self, k, v)
+    def to_dict(self): return self._data
 
 class RecognitionProcessor:
-    def __init__(self, custom_words=None, custom_groups=None):
-        self.custom_words = custom_words or []
-        self.custom_groups = custom_groups or []
+    def __init__(self, config_data=None):
+        self.config = config_data or {}
+        self.custom_words = self.config.get('custom_words', [])
+        self.custom_groups = self.config.get('custom_groups', [])
 
     def recognize_file(self, filename_path: str) -> RecognitionResult:
-        """调用本地内核进行深度识别并构建对标主项目的 final_result"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self._async_recognize(filename_path))
+            loop.close()
+            return result
+        except Exception as e:
+            return RecognitionResult({"title": "识别异常", "filename": os.path.basename(filename_path)}, [str(e)])
+
+    async def _async_recognize(self, filename_path: str) -> RecognitionResult:
         start_time = time.time()
         logs = []
         filename = os.path.basename(filename_path)
 
         if not ALGO_AVAILABLE:
-            logs.append("[ERROR] 核心算法库未就绪。")
-            return RecognitionResult({"title": "算法未就绪", "season": 1, "episode": "1"}, logs)
-        
+            return RecognitionResult({"title": "内核缺失"}, ["[ERROR] 请先下载核心算法"])
+
         try:
-            # 1. 加载持久化规则
+            # 1. 规则准备 (L1)
             db_noise = RuleManager.get_merged_rules('noise')
             db_groups = RuleManager.get_merged_rules('group')
-            db_privileged = RuleManager.get_merged_rules('privileged')
+            db_priv = RuleManager.get_merged_rules('privileged')
             
-            # 2. 注入特权规则
-            if db_privileged:
-                SpecialEpisodeHandler.load_external_rules(db_privileged)
+            if db_priv:
+                SpecialEpisodeHandler.load_external_rules(db_priv)
 
-            # 3. 合并参数并执行内核解析 (L1 Kernel)
-            final_words = list(set(self.custom_words + db_noise))
-            final_groups = list(set(self.custom_groups + db_groups))
-
+            # 2. 本地内核解析
             meta = core_recognize(
                 input_name=filename,
-                custom_words=final_words,
-                custom_groups=final_groups,
+                custom_words=list(set(self.custom_words + db_noise)),
+                custom_groups=list(set(self.custom_groups + db_groups)),
                 original_input=filename,
                 current_logs=logs,
-                batch_enhancement=False,
-                force_filename=False
+                batch_enhancement=self.config.get('batch_enhancement', False),
+                force_filename=True
             )
 
-            # 4. 构建对标 Docker 版的结论字典 (Final Mapping)
-            m_type_zh = "电影" if "movie" in str(meta.type).lower() else "剧集"
-            
-            # 组装字段
+            # 3. 构造基础结论
             final_dict = {
                 "title": meta.cn_name or meta.en_name or meta.processed_name or filename,
                 "tmdb_id": str(meta.forced_tmdbid) if meta.forced_tmdbid else "",
-                "category": m_type_zh,
+                "category": "电影" if "movie" in str(meta.type).lower() else "剧集",
                 "processed_name": meta.processed_name or "",
-                "poster_path": "", # 本地版暂无云端海报
-                "release_date": "", # 本地版暂无上映日期
                 "season": meta.begin_season if meta.begin_season is not None else 1,
                 "episode": str(meta.begin_episode) if meta.begin_episode is not None else "1",
                 "team": meta.resource_team or "",
@@ -92,18 +92,63 @@ class RecognitionProcessor:
                 "subtitle": meta.subtitle_lang or "",
                 "source": meta.resource_type or "",
                 "platform": meta.resource_platform or "",
-                "origin_country": "日本", # 核心默认为动漫识别
-                "vote_average": 0.0,
                 "year": meta.year or "",
-                "duration": f"{time.time() - start_time:.2f}s",
                 "filename": filename,
                 "path": filename_path
             }
 
+            # 4. 云端联动 (L2 Cloud)
+            cloud_data = None
+            if self.config.get('with_cloud'):
+                tmdb_key = self.config.get('tmdb_api_key')
+                if tmdb_key:
+                    logs.append("┃ [DEBUG] 启动云端对撞流...")
+                    tmdb = TMDBProvider(api_key=tmdb_key, proxy=self.config.get('tmdb_proxy'))
+                    m_type = "movie" if final_dict["category"] == "电影" else "tv"
+                    
+                    # 4.1 检查智能记忆 (如果启用)
+                    if self.config.get('use_storage') and not final_dict["tmdb_id"]:
+                        pattern_key = f"{meta.cn_name or meta.en_name}|{meta.year}"
+                        memory = storage.get_memory(pattern_key)
+                        if memory:
+                            final_dict["tmdb_id"] = memory['tmdb_id']
+                            logs.append(f"┃ [STORAGE] ⚡ 命中心特征记忆: 自动锁定 ID {final_dict['tmdb_id']}")
+
+                    # 4.2 执行搜索或获取详情
+                    if final_dict["tmdb_id"]:
+                        cloud_data = await tmdb.get_details(final_dict["tmdb_id"], m_type, logs)
+                    else:
+                        # 尝试通过搜索匹配
+                        cloud_data = await tmdb.smart_search(
+                            meta.cn_name, meta.en_name, meta.year, m_type, logs,
+                            anime_priority=self.config.get('anime_priority', True)
+                        )
+                        
+                        # 如果开启了 Bangumi 故障转移且 TMDB 失败
+                        if not cloud_data and self.config.get('bgm_failover'):
+                            logs.append("┃ [DEBUG] TMDB 检索失败，尝试 Bangumi 故障转移...")
+                            bgm = BangumiProvider(token=self.config.get('bangumi_token'), proxy=self.config.get('bangumi_proxy'))
+                            bgm_subject = await bgm.search_subject(meta.cn_name or meta.en_name, logs)
+                            if bgm_subject:
+                                # 映射回 TMDB
+                                cloud_data = await bgm.map_to_tmdb(bgm_subject, tmdb_api_key=tmdb_key, logs=logs, tmdb_proxy=self.config.get('tmdb_proxy'))
+
+                    # 4.3 写入记忆
+                    if self.config.get('use_storage') and cloud_data:
+                        pattern_key = f"{meta.cn_name or meta.en_name}|{meta.year}"
+                        storage.set_memory(pattern_key, str(cloud_data.get('id')), m_type, final_dict["season"])
+
+            # 5. 更新最终字段
+            if cloud_data:
+                final_dict.update({
+                    "title": cloud_data.get("title") or cloud_data.get("name") or final_dict["title"],
+                    "tmdb_id": str(cloud_data.get("id", "")),
+                    "year": (cloud_data.get("release_date") or cloud_data.get("first_air_date") or "")[:4] or final_dict["year"]
+                })
+
+            final_dict["duration"] = f"{time.time() - start_time:.2f}s"
             return RecognitionResult(final_dict, logs)
 
         except Exception as e:
-            logs.append(f"[ERROR] 核心识别崩溃: {str(e)}")
-            logs.append(traceback.format_exc())
-            # 返回空结果防止 UI 崩溃
-            return RecognitionResult({"title": "识别失败", "filename": filename, "path": filename_path}, logs)
+            logs.append(f"[CRITICAL] {str(e)}\n{traceback.format_exc()}")
+            return RecognitionResult({"title": "识别失败", "filename": filename}, logs)
