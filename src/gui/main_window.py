@@ -2,6 +2,7 @@ import os
 import sys
 import datetime
 import traceback
+import urllib.parse
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QTextEdit, QFileDialog, QMessageBox,
                              QProgressBar, QGroupBox, QLineEdit, QTableWidget,
@@ -54,7 +55,8 @@ class VideoRenamerGUI(QMainWindow):
         file_layout = QVBoxLayout()
         self.file_list = QTextEdit()
         self.file_list.setPlaceholderText("拖放剧集文件或文件夹到这里...")
-        self.file_list.setAcceptDrops(True)
+        # 禁用 QTextEdit 自身的拖拽接受，让事件传递给主窗口的 dropEvent 处理
+        self.file_list.setAcceptDrops(False) 
         btn_layout = QHBoxLayout()
         self.browse_files_btn = QPushButton("浏览文件")
         self.browse_files_btn.clicked.connect(self.browse_files)
@@ -158,24 +160,34 @@ class VideoRenamerGUI(QMainWindow):
     def init_settings_tab(self):
         layout = QVBoxLayout(self.settings_tab)
         
-        format_group = QGroupBox("重命名格式")
+        format_group = QGroupBox("重命名格式与占位符")
         format_layout = QFormLayout()
+        
+        # 增加更专业的默认格式选项
         self.rename_format_combo = QComboBox()
         self.rename_format_combo.addItems([
+            "[{team}] {title} - S{season}E{episode} [{resolution}][{video_encode}][{subtitle}]",
+            "{title} ({year}) - S{season}E{episode} [{resolution}]",
             "{title} - S{season}E{episode} - {filename}",
-            "{title}.S{season}E{episode}",
-            "{title}.({year}).S{season}E{episode}",
-            "S{season}E{episode}.{title}",
-            "{filename} S{season}E{episode}"
+            "{title}.S{season}E{episode}.{resolution}.{video_encode}-{team}",
+            "S{season}E{episode}.{title}"
         ])
         self.rename_format_combo.setEditable(True)
         format_layout.addRow("文件名格式:", self.rename_format_combo)
+        
         self.folder_format_input = QLineEdit()
         self.folder_format_input.setText("({year}){title}[tmdbid={tmdbid}]")
         format_layout.addRow("主文件夹格式:", self.folder_format_input)
+        
         self.season_format_input = QLineEdit()
         self.season_format_input.setText("Season {season_int}")
         format_layout.addRow("季文件夹格式:", self.season_format_input)
+        
+        # 增加占位符说明按钮
+        self.help_btn = QPushButton("查看所有可用占位符说明")
+        self.help_btn.clicked.connect(self.show_placeholder_help)
+        format_layout.addRow(self.help_btn)
+        
         format_group.setLayout(format_layout)
         layout.addWidget(format_group)
 
@@ -280,6 +292,40 @@ class VideoRenamerGUI(QMainWindow):
         self.custom_season_checkbox.setChecked(config.get_value("custom_season_enabled", False, type=bool))
         self.custom_tmdbid_checkbox.setChecked(config.get_value("custom_tmdbid_enabled", False, type=bool))
 
+    def show_placeholder_help(self):
+        msg = (
+            "<b>可用占位符说明 (全字段对齐):</b><br><br>"
+            "<b>基础信息:</b><br>"
+            "  {title}: 最终采信标题<br>"
+            "  {season}: 补零季度 (如 01)<br>"
+            "  {season_int}: 原始季度 (如 1)<br>"
+            "  {episode}: 补零集数或范围 (如 13 或 01-12)<br>"
+            "  {year}: 最终采信年份<br>"
+            "  {tmdb_id} / {tmdbid}: TMDB 编号<br><br>"
+            "<b>技术规格:</b><br>"
+            "  {team}: 制作小组 (如 Airota)<br>"
+            "  {resolution}: 分辨率 (如 1080p)<br>"
+            "  {video_encode}: 视频编码 (如 x265)<br>"
+            "  {video_effect}: 视频特效 (如 HDR, DV)<br>"
+            "  {audio_encode}: 音频编码 (如 FLAC)<br>"
+            "  {subtitle}: 字幕语言 (如 CHS, CHT)<br><br>"
+            "<b>高级属性:</b><br>"
+            "  {source}: 资源来源 (如 WEB-DL, BluRay)<br>"
+            "  {platform}: 发布平台 (如 B-Global)<br>"
+            "  {category}: 媒体分类 (剧集 / 电影)<br>"
+            "  {origin_country}: 制片国家<br>"
+            "  {vote_average}: 评分<br><br>"
+            "<b>程序字段:</b><br>"
+            "  {filename}: 原始文件名(无扩展名)<br>"
+            "  {duration}: 识别耗时"
+        )
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("占位符使用帮助")
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(msg)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.exec()
+
     def save_settings(self):
         config.set_value("rename_format", self.rename_format_combo.currentText())
         config.set_value("folder_format", self.folder_format_input.text())
@@ -306,10 +352,32 @@ class VideoRenamerGUI(QMainWindow):
     def add_paths_to_list(self, paths):
         current_text = self.file_list.toPlainText()
         existing = set(current_text.splitlines())
-        new_paths = [p for p in paths if p not in existing]
-        if new_paths:
+        
+        processed_paths = []
+        for p in paths:
+            # 1. URL 解码 (修复百分号编码)
+            p = urllib.parse.unquote(p)
+            
+            # 2. 剥离 file:/// 或 file:// 前缀
+            if p.startswith('file:///'):
+                p = p[8:]
+            elif p.startswith('file://'):
+                p = p[7:]
+            
+            # 3. 针对 Windows 下的路径修正 (如 /D:/ -> D:/)
+            if os.name == 'nt' and len(p) > 2 and p[0] == '/' and p[2] == ':':
+                p = p[1:]
+                
+            # 4. 标准化路径格式
+            p = os.path.normpath(p)
+            
+            if p not in existing:
+                processed_paths.append(p)
+                existing.add(p)
+
+        if processed_paths:
             prefix = "\n" if current_text.strip() else ""
-            self.file_list.append(prefix + "\n".join(new_paths))
+            self.file_list.append(prefix + "\n".join(processed_paths))
 
     def clear_file_list(self):
         self.file_list.clear()
@@ -383,11 +451,15 @@ class VideoRenamerGUI(QMainWindow):
         QMessageBox.information(self, "完成", f"处理完成！共处理 {len(results)} 个文件。")
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls(): event.acceptProposedAction()
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
 
     def dropEvent(self, event):
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
-        self.add_paths_to_list(paths)
+        if event.mimeData().hasUrls():
+            # 获取拖拽内容的原始字符串表示
+            urls = [u.toString() for u in event.mimeData().urls()]
+            self.add_paths_to_list(urls)
+            event.acceptProposedAction()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
