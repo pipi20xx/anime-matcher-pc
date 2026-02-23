@@ -36,6 +36,28 @@ class VideoRenamerGUI(QMainWindow):
         
         # 4. 开启全局拖拽接受
         self.setAcceptDrops(True)
+        
+        # 5. 恢复窗口上次关闭时的尺寸和位置
+        self.restore_window_state()
+
+    def restore_window_state(self):
+        """从配置中恢复窗口几何状态"""
+        from src.utils.config import config
+        geometry = config.get_value("window_geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        if config.get_value("window_maximized", False, type=bool):
+            self.showMaximized()
+
+    def closeEvent(self, event):
+        """窗口关闭时记录位置和尺寸"""
+        from src.utils.config import config
+        # 保存主窗口几何信息
+        config.set_value("window_geometry", self.saveGeometry())
+        config.set_value("window_maximized", self.isMaximized())
+        # 保存主界面 Tab 的内部组件状态 (如分割条)
+        self.main_tab.save_ui_states()
+        super().closeEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

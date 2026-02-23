@@ -1,0 +1,28 @@
+{
+  "🧠 最终决策结果": {
+    "title": "最终识别出的标题",
+    "year": "上映年份",
+    "category": "资源类别",
+    "season": "季号",
+    "season_02": "季号补零",
+    "episode": "集号",
+    "episode_02": "集号补零",
+    "resolution": "分辨率",
+    "team": "制作组",
+    "source": "来源",
+    "video_encode": "视频编码",
+    "audio_encode": "音频编码",
+    "subtitle": "字幕语言",
+    "video_effect": "视频特效",
+    "platform": "发布平台",
+    "release_date": "发布日期",
+    "tmdb_id": "TMDB ID",
+    "secondary_category": "二级分类全路径",
+    "main_category": "主二级分类",
+    "origin_country": "原产地国家",
+    "filename": "清洗后原名",
+    "processed_name": "渲染后原名",
+    "original_filename": "原始文件名",
+    "path": "原始路径"
+  }
+}

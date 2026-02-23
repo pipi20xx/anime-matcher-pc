@@ -23,7 +23,7 @@ class MainTab(QWidget):
 
     def init_ui(self):
         # --- 1. 上部：文件选择与自定义选项 ---
-        top_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.top_splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # 1.1 左侧：文件列表
         file_group = QGroupBox("文件/文件夹选择")
@@ -46,7 +46,7 @@ class MainTab(QWidget):
         file_layout.addWidget(self.file_list)
         file_layout.addLayout(btn_layout)
         file_group.setLayout(file_layout)
-        top_splitter.addWidget(file_group)
+        self.top_splitter.addWidget(file_group)
 
         # 1.2 右侧：自定义覆盖参数
         custom_group = QGroupBox("识别参数覆盖")
@@ -81,8 +81,8 @@ class MainTab(QWidget):
         self.custom_tmdbid_checkbox.toggled.connect(self.custom_tmdb_media_combo.setEnabled)
         
         custom_group.setLayout(custom_layout)
-        top_splitter.addWidget(custom_group)
-        self.layout.addWidget(top_splitter, 1)
+        self.top_splitter.addWidget(custom_group)
+        self.layout.addWidget(self.top_splitter, 1)
 
         # --- 2. 中部：预览表格 ---
         preview_group = QGroupBox("预览/结果")
@@ -118,6 +118,20 @@ class MainTab(QWidget):
         action_layout.addWidget(self.execute_btn)
         action_layout.addWidget(self.cancel_btn)
         self.layout.addLayout(action_layout)
+        
+        # 恢复分割条状态
+        self.restore_splitter_state()
+
+    def restore_splitter_state(self):
+        from src.utils.config import config
+        state = config.get_value("main_splitter_state")
+        if state:
+            self.top_splitter.restoreState(state)
+
+    def save_ui_states(self):
+        """保存内部组件状态，供主窗口关闭时调用"""
+        from src.utils.config import config
+        config.set_value("main_splitter_state", self.top_splitter.saveState())
 
     def browse_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "选择视频文件", "", "视频文件 (*.mkv *.mp4 *.avi *.ts);;所有文件 (*.*)")

@@ -4,9 +4,10 @@ import time
 import traceback
 import asyncio
 
+from src.utils.paths import CORE_ALGO_DIR
+
 # 动态加载核心识别库
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CORE_PATH = os.path.join(ROOT_DIR, "anime-matcher-main", "src")
+CORE_PATH = os.path.join(CORE_ALGO_DIR, "src")
 if CORE_PATH not in sys.path:
     sys.path.append(CORE_PATH)
 
