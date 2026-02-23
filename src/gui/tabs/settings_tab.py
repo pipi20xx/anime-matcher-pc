@@ -1,5 +1,4 @@
 import os
-import json
 import sqlite3
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGroupBox, QFormLayout, 
                              QLineEdit, QComboBox, QPlainTextEdit, QPushButton, 
@@ -7,7 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGroupBox, QFormLayout,
 from PyQt6.QtCore import Qt
 from src.utils.config import config
 from src.utils.downloader import DownloadWorker
-from src.utils.paths import APP_ROOT, CORE_ALGO_DIR, PLACEHOLDERS_JSON, CORE_DB_PATH
+from src.utils.paths import APP_ROOT, CORE_ALGO_DIR, CORE_DB_PATH
 
 class SettingsTab(QWidget):
     def __init__(self, parent=None):
@@ -49,16 +48,16 @@ class SettingsTab(QWidget):
         # 2. 联网
         net_group = QGroupBox("联网匹配设置 (TMDB / Bangumi)")
         net_layout = QFormLayout()
-        self.with_cloud_cb = QCheckBox("开启云端联动 (从网络获取标准标题)"); self.with_cloud_cb.setChecked(True)
+        self.with_cloud_cb = QCheckBox("开启云端联动 (获取准确官方标题)"); self.with_cloud_cb.setChecked(True)
         net_layout.addRow(self.with_cloud_cb)
         self.tmdb_api_key_input = QLineEdit(); net_layout.addRow("TMDB API Key:", self.tmdb_api_key_input)
         self.tmdb_proxy_input = QLineEdit(); net_layout.addRow("TMDB 代理:", self.tmdb_proxy_input)
         self.bangumi_token_input = QLineEdit(); net_layout.addRow("Bangumi Token:", self.bangumi_token_input)
         self.bangumi_proxy_input = QLineEdit(); net_layout.addRow("Bangumi 代理:", self.bangumi_proxy_input)
-        self.use_storage_cb = QCheckBox("开启智能记忆 (SQLite 持久化缓存)"); self.use_storage_cb.setChecked(True)
+        self.use_storage_cb = QCheckBox("开启智能记忆 (SQLite 缓存)"); self.use_storage_cb.setChecked(True)
         net_layout.addRow(self.use_storage_cb)
         strat_layout = QHBoxLayout()
-        self.anime_priority_cb = QCheckBox("动漫分类优化"); self.bgm_failover_cb = QCheckBox("Bangumi 故障转移")
+        self.anime_priority_cb = QCheckBox("动漫优化"); self.bgm_failover_cb = QCheckBox("Bgm 故障转移")
         strat_layout.addWidget(self.anime_priority_cb); strat_layout.addWidget(self.bgm_failover_cb)
         net_layout.addRow("匹配策略:", strat_layout)
         net_group.setLayout(net_layout)
@@ -79,13 +78,13 @@ class SettingsTab(QWidget):
         btn_h = QHBoxLayout()
         self.download_btn = QPushButton("自动下载/更新 (GitHub)"); self.download_btn.clicked.connect(self.download_core_algorithm)
         self.manual_btn = QPushButton("手动部署指引"); self.manual_btn.clicked.connect(self.show_manual_instructions)
-        self.help_btn = QPushButton("💡 占位符说明"); self.help_btn.clicked.connect(self.show_placeholder_help)
-        btn_h.addWidget(self.download_btn); btn_h.addWidget(self.manual_btn); btn_h.addWidget(self.help_btn)
+        btn_h.addWidget(self.download_btn); btn_h.addWidget(self.manual_btn)
         algo_layout.addWidget(self.algo_status_label); algo_layout.addLayout(btn_h)
-        algo_group.setLayout(algo_layout); self.layout.addWidget(algo_group)
+        algo_group.setLayout(algo_layout)
+        self.layout.addWidget(algo_group)
 
         # 5. 噪声规则
-        regex_group = QGroupBox("正则规则 (噪声清洗)")
+        regex_group = QGroupBox("路径噪声清洗 (正则替换)")
         r_layout = QVBoxLayout()
         self.regex_rules_edit = QPlainTextEdit(); self.regex_rules_edit.setPlaceholderText("(?i) unwanted => replacement")
         r_layout.addWidget(self.regex_rules_edit); regex_group.setLayout(r_layout)
@@ -129,24 +128,11 @@ class SettingsTab(QWidget):
         if success: self.check_algo_status()
         QMessageBox.information(self, "结果", message)
 
-    def show_placeholder_help(self):
-        try:
-            with open(PLACEHOLDERS_JSON, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            help_text = "<h3>🧠 重命名占位符指南</h3><table border='1' style='border-collapse: collapse; width: 100%;'>"
-            for section, items in data.items():
-                for key, desc in items.items():
-                    help_text += f"<tr><td><code>{{{key}}}</code></td><td>{desc}</td></tr>"
-            help_text += "</table>"
-            QMessageBox.information(self, "占位符说明", help_text)
-        except Exception as e:
-            QMessageBox.warning(self, "错误", f"无法加载占位符文件: {str(e)}\n路径: {PLACEHOLDERS_JSON}")
-
     def clear_core_db_table(self, table_name):
         if not os.path.exists(CORE_DB_PATH):
             QMessageBox.warning(self, "提示", "数据库文件尚未生成。")
             return
-        if QMessageBox.question(self, '确认', f"确定清空 {table_name} 吗？") == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, '确认清理', f"确定清理核心缓存表 [{table_name}] 吗？") == QMessageBox.StandardButton.Yes:
             try:
                 conn = sqlite3.connect(CORE_DB_PATH); cursor = conn.cursor()
                 cursor.execute(f"DELETE FROM {table_name}"); conn.commit(); conn.close()

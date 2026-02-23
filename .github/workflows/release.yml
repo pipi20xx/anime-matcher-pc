@@ -24,8 +24,8 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          # 补全核心算法所有可能的依赖
-          pip install PyQt6 requests regex peewee zhconv cn2an pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy httpx hishel
+          # 安装核心算法及其资源管理依赖
+          pip install PyQt6 requests regex peewee zhconv cn2an pyinstaller fastapi pydantic uvicorn sqlmodel sqlalchemy httpx hishel setuptools
 
       - name: Download Core Algorithm
         run: |
@@ -39,12 +39,11 @@ jobs:
 
       - name: Build EXE with PyInstaller
         run: |
-          # 显式点名所有动态加载的第三方库
+          # --collect-all 会强制包含包内所有元数据、二进制和数据文件(如 zhcdict.json)
           pyinstaller --noconfirm --onedir --windowed `
-            --add-data "src/utils/placeholders.json;src/utils" `
+            --collect-all "zhconv" `
+            --collect-all "cn2an" `
             --hidden-import "regex" `
-            --hidden-import "zhconv" `
-            --hidden-import "cn2an" `
             --hidden-import "httpx" `
             --hidden-import "hishel" `
             --hidden-import "fastapi" `
@@ -80,9 +79,9 @@ jobs:
           files: AnimeProRenamer_Full_Win64.zip
           body: |
             ## 🚀 AnimeProRenamer ${{ env.VERSION }}
-            - 内置最新核心: `anime-matcher`
-            - 依赖补全: `httpx`, `cn2an`, `zhconv`, `regex` 等已全部打入 EXE
-            - 构建环境: GitHub Actions (Windows-2022)
+            - **资源修复**: 已强制打包 `zhconv` 与 `cn2an` 的字典文件
+            - **内核版本**: 同步最新版 `anime-matcher`
+            - **环境依赖**: 已内建所有库，解压即用
           draft: false
           prerelease: false
         env:
