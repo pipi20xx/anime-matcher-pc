@@ -1,0 +1,72 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 当你推送以 v 开头的标签时触发，如 v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyQt6 requests regex peewee pyinstaller
+
+      - name: Download Core Algorithm (Complete Build)
+        run: |
+          # 自动下载最新的核心算法库并重命名为 anime-matcher-main
+          curl -L https://github.com/pipi20xx/anime-matcher/archive/refs/heads/main.zip -o core.zip
+          powershell Expand-Archive -Path core.zip -DestinationPath .
+          # GitHub ZIP 内部通常包含一个带分支名的文件夹，寻找它并重命名
+          Get-ChildItem -Directory | Where-Object { $_.Name -like "anime-matcher-*" } | Rename-Item -NewName "anime-matcher-main"
+          rm core.zip
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --noconfirm --onedir --windowed `
+            --add-data "src/utils/placeholders.json;src/utils" `
+            --name "AnimeProRenamer" `
+            main.py
+
+      - name: Package Release
+        run: |
+          # 将 EXE 所在的文件夹与刚才下载的核心算法库打包在一起
+          mkdir release_dist
+          xcopy /E /I dist\AnimeProRenamer release_dist\AnimeProRenamer
+          # 将核心算法移动到 release 目录下，这样用户解压即用
+          xcopy /E /I anime-matcher-main release_dist\AnimeProRenamer\anime-matcher-main
+          
+          # 创建 ZIP
+          powershell Compress-Archive -Path release_dist\AnimeProRenamer -DestinationPath AnimeProRenamer_Full_Win64.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: AnimeProRenamer_Full_Win64.zip
+          body: |
+            ## AnimeProRenamer 自动编译版
+            
+            这是由 GitHub Actions 自动构建的完整版本，已内置识别核心算法。
+            
+            ### 变更日志
+            - 自动同步最新 anime-matcher 核心
+            - 完整依赖打包，解压即用
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
