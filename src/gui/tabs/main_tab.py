@@ -150,15 +150,31 @@ class MainTab(QWidget):
     def add_paths_to_list(self, paths):
         current_text = self.file_list.toPlainText()
         existing = set(current_text.splitlines())
+        
         processed = []
         for p in paths:
+            # 1. URL 解码
             p = urllib.parse.unquote(p)
-            if p.startswith('file:///'): p = p[8:]
-            elif p.startswith('file://'): p = p[7:]
-            if os.name == 'nt' and len(p) > 2 and p[0] == '/' and p[2] == ':': p = p[1:]
+            
+            # 2. 智能剥离协议头并处理 UNC 路径
+            if p.startswith('file:///'): 
+                # 本地路径格式 file:///D:/path
+                p = p[8:]
+            elif p.startswith('file://'):
+                # 网络 UNC 路径格式 file://192.168.1.1/share
+                # 剥离后需补回 // 以前缀表示这是网络路径
+                p = '//' + p[7:]
+            
+            # 3. 针对 Windows 本地盘符的修正 (如 /D:/ -> D:/)
+            if os.name == 'nt' and len(p) > 2 and p[0] == '/' and p[2] == ':':
+                p = p[1:]
+            
+            # 4. 标准化路径 (会自动将 // 转为 \\\\)
             p = os.path.normpath(p)
+            
             if p not in existing:
-                processed.append(p); existing.add(p)
+                processed.append(p)
+                existing.add(p)
         if processed:
             prefix = "\n" if current_text.strip() else ""
             self.file_list.append(prefix + "\n".join(processed))
